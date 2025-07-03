@@ -7,7 +7,6 @@ import paramiko
 from cryptography.fernet import Fernet
 from pathlib import Path
 from tqdm import tqdm
-import sys
 import tempfile
 import shutil
 
