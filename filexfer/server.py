@@ -77,7 +77,7 @@ def run_server():
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server_socket.bind((host, port))
     server_socket.listen(5)
-    print(f"FileXfer server running on {host}:{port}")
+    print(f"Filexfer server running on {host}:{port}")
 
     config = load_config(is_server=True)
     if not config:
