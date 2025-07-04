@@ -6,30 +6,61 @@ import click
 import paramiko
 from pathlib import Path
 import shutil
+import tempfile
 from cryptography.fernet import Fernet
-from .utils import encrypt_file, decrypt_file, ProgressFile, save_config
+from .utils import encrypt_file, decrypt_file, save_config, load_config
 
 CONFIG_DIR = Path.home() / ".filexfer"
 CLIENT_KEY_FILE = CONFIG_DIR / "client_key"
-SERVER_HOST = "45.79.122.246"
-SERVER_PORT = 22
+CLIENT_CONFIG_FILE = CONFIG_DIR / "client_config.json"
+DEFAULT_SERVER_HOST = "45.79.122.246"
+DEFAULT_SERVER_PORT = 2222
+
+def save_client_config(server_host, server_port):
+    CONFIG_DIR.mkdir(exist_ok=True)
+    config = {"server_host": server_host, "server_port": server_port}
+    try:
+        with open(CLIENT_CONFIG_FILE, 'w') as f:
+            json.dump(config, f, indent=2)
+        os.chmod(CLIENT_CONFIG_FILE, 0o600)
+    except Exception as e:
+        raise Exception(f"Failed to save client config: {e}")
+
+def load_client_config():
+    try:
+        if not CLIENT_CONFIG_FILE.exists():
+            return {"server_host": DEFAULT_SERVER_HOST, "server_port": DEFAULT_SERVER_PORT}
+        with open(CLIENT_CONFIG_FILE, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        raise Exception(f"Failed to load client config: {e}")
 
 def save_client_key(client_key):
     CONFIG_DIR.mkdir(exist_ok=True)
-    with open(CLIENT_KEY_FILE, 'w') as f:
-        f.write(client_key)
-    os.chmod(CLIENT_KEY_FILE, 0o600)
+    try:
+        with open(CLIENT_KEY_FILE, 'w') as f:
+            f.write(client_key)
+        os.chmod(CLIENT_KEY_FILE, 0o600)
+    except Exception as e:
+        raise Exception(f"Failed to save client key: {e}")
 
 def load_client_key():
-    if not CLIENT_KEY_FILE.exists():
-        return None
-    with open(CLIENT_KEY_FILE, 'r') as f:
-        return f.read()
+    try:
+        if not CLIENT_KEY_FILE.exists():
+            return None
+        with open(CLIENT_KEY_FILE, 'r') as f:
+            return f.read()
+    except Exception as e:
+        raise Exception(f"Failed to load client key: {e}")
 
 def send_server_command(command):
     try:
-        print(f"Attempting to connect to {SERVER_HOST}:{SERVER_PORT}")
-        transport = paramiko.Transport((SERVER_HOST, SERVER_PORT))
+        config = load_client_config()
+        server_host = config["server_host"]
+        server_port = config["server_port"]
+        print(f"Attempting to connect to {server_host}:{server_port}")
+        transport = paramiko.Transport((server_host, server_port), default_window_size=65536, default_max_packet_size=32768)
+        transport.set_keepalive(30)
         print("Transport created, attempting to connect with username 'filexfer'")
         transport.connect(username="filexfer", password="filexfer")
         print("Connected, opening session")
@@ -47,9 +78,13 @@ def send_server_command(command):
         raise
 
 def get_sftp_client(config):
-    transport = paramiko.Transport((config["ssh_host"], config["ssh_port"]))
-    transport.connect(username=config["ssh_username"], password=config["ssh_password"])
-    return paramiko.SFTPClient.from_transport(transport)
+    try:
+        transport = paramiko.Transport((config["ssh_host"], config["ssh_port"]))
+        transport.set_keepalive(30)
+        transport.connect(username=config["ssh_username"], password=config["ssh_password"])
+        return paramiko.SFTPClient.from_transport(transport)
+    except Exception as e:
+        raise Exception(f"Failed to create SFTP client: {e}")
 
 def validate_token(token_id):
     response = send_server_command(f"validate_token {token_id}")
@@ -59,14 +94,17 @@ def load_config():
     client_key = load_client_key()
     if not client_key:
         return None
-    response = send_server_command("get_config")
-    config = response["config"]
-    fernet = Fernet(client_key.encode())
-    config["ssh_host"] = fernet.decrypt(config["ssh_host"].encode()).decode()
-    config["ssh_username"] = fernet.decrypt(config["ssh_username"].encode()).decode()
-    config["ssh_password"] = fernet.decrypt(config["ssh_password"].encode()).decode()
-    config["ssh_port"] = int(fernet.decrypt(config["ssh_port"].encode()).decode())
-    return config
+    try:
+        response = send_server_command("get_config")
+        config = response["config"]
+        fernet = Fernet(client_key.encode())
+        config["ssh_host"] = fernet.decrypt(config["ssh_host"].encode()).decode()
+        config["ssh_username"] = fernet.decrypt(config["ssh_username"].encode()).decode()
+        config["ssh_password"] = fernet.decrypt(config["ssh_password"].encode()).decode()
+        config["ssh_port"] = int(fernet.decrypt(config["ssh_port"].encode()).decode())
+        return config
+    except Exception as e:
+        raise Exception(f"Failed to load config: {e}")
 
 def upload_folder_recursive(sftp, local_path, remote_path, token):
     local_path = Path(local_path)
@@ -106,6 +144,24 @@ def delete_recursive(sftp, remote_path, token):
     except:
         pass
 
+class ProgressFile:
+    def __init__(self, file_obj, total_size, message):
+        self.file_obj = file_obj
+        self.total_size = total_size
+        self.message = message
+        self.transferred = 0
+
+    def write(self, data):
+        self.transferred += len(data)
+        self.file_obj.write(data)
+        percent = (self.transferred / self.total_size) * 100
+        print(f"\r{self.message}: {percent:.1f}%", end='')
+        if self.transferred >= self.total_size:
+            print()
+
+    def close(self):
+        self.file_obj.close()
+
 @click.group()
 def cli():
     """FileXfer: A secure file transfer CLI tool."""
@@ -113,10 +169,13 @@ def cli():
 
 @cli.command()
 @click.option("--client-key", prompt=True, help="Client key provided by server administrator")
-def init(client_key):
+@click.option("--server-host", default=DEFAULT_SERVER_HOST, help="Server host address")
+@click.option("--server-port", default=DEFAULT_SERVER_PORT, type=int, help="Server port")
+def init(client_key, server_host, server_port):
     """Initialize client with server-provided client key."""
-    save_client_key(client_key)
     try:
+        save_client_key(client_key)
+        save_client_config(server_host, server_port)
         config = load_config()
         if not config:
             click.echo("Failed to fetch configuration from server. Check client key or server status.")
@@ -140,9 +199,12 @@ def init_server(ssh_host, ssh_port, ssh_username, ssh_password):
         "ssh_password": ssh_password,
         "tokens": []
     }
-    client_key = save_config(config, is_server=True)
-    click.echo("Server initialized")
-    click.echo(f"Client key: {client_key}")
+    try:
+        client_key = save_config(config, is_server=True)
+        click.echo("Server initialized")
+        click.echo(f"Client key: {client_key}")
+    except Exception as e:
+        click.echo(f"Error initializing server: {e}")
 
 @cli.command()
 def server():
@@ -160,16 +222,22 @@ def stop():
 @click.argument("bucket_name")
 def create_bucket(bucket_name):
     """Create a new bucket."""
-    response = send_server_command(f"create_bucket {bucket_name}")
-    click.echo(response["message"])
+    try:
+        response = send_server_command(f"create_bucket {bucket_name}")
+        click.echo(response["message"])
+    except Exception as e:
+        click.echo(f"Error creating bucket: {e}")
 
 @cli.command()
 @click.argument("bucket_name")
 @click.argument("subfolder_name")
 def create_subfolder(bucket_name, subfolder_name):
     """Create a subfolder in a bucket."""
-    response = send_server_command(f"create_subfolder {bucket_name} {subfolder_name}")
-    click.echo(response["message"])
+    try:
+        response = send_server_command(f"create_subfolder {bucket_name} {subfolder_name}")
+        click.echo(response["message"])
+    except Exception as e:
+        click.echo(f"Error creating subfolder: {e}")
 
 @cli.command()
 @click.argument("bucket_name")
@@ -196,15 +264,21 @@ def create_token(bucket_name, read, write, delete, expiry_days):
         "key": key.decode(),
         "expiry": expiry
     }
-    response = send_server_command(f"create_token {json.dumps(token)}")
-    click.echo(response["message"])
+    try:
+        response = send_server_command(f"create_token {json.dumps(token)}")
+        click.echo(response["message"])
+    except Exception as e:
+        click.echo(f"Error creating token: {e}")
 
 @cli.command()
 @click.argument("token_id")
 def revoke_token(token_id):
     """Revoke a Transfer Token."""
-    response = send_server_command(f"revoke_token {token_id}")
-    click.echo(response["message"])
+    try:
+        response = send_server_command(f"revoke_token {token_id}")
+        click.echo(response["message"])
+    except Exception as e:
+        click.echo(f"Error revoking token: {e}")
 
 @cli.command()
 @click.argument("token_id")

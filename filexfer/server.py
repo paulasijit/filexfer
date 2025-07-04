@@ -1,7 +1,6 @@
 import socket
 import json
 import paramiko
-from cryptography.fernet import Fernet
 from pathlib import Path
 import datetime
 import os
@@ -11,9 +10,10 @@ CONFIG_DIR = Path.home() / ".filexfer"
 SETTINGS_FILE = CONFIG_DIR / "settings.json"
 SSH_KEY_FILE = CONFIG_DIR / "key"
 
-def handle_client(client_socket, config):
+def handle_client(channel, config):
     try:
-        command = client_socket.recv(1024).decode().strip()
+        command = channel.recv(1024).decode().strip()
+        print(f"Received command: {command}")
         parts = command.split(" ", 1)
         cmd = parts[0]
         args = parts[1] if len(parts) > 1 else ""
@@ -62,57 +62,89 @@ def handle_client(client_socket, config):
             log_transfer(log_entry)
             response = {"message": "Transfer logged"}
         else:
-            response = {"error": "Unknown command"}
+            response = {"error": f"Unknown command: {cmd}"}
 
-        client_socket.send(json.dumps(response).encode())
+        channel.send(json.dumps(response).encode())
     except Exception as e:
-        client_socket.send(json.dumps({"error": str(e)}).encode())
+        channel.send(json.dumps({"error": str(e)}).encode())
     finally:
-        client_socket.close()
+        channel.close()
 
 def run_server():
     host = "0.0.0.0"
     port = 2222
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server_socket.bind((host, port))
+    try:
+        server_socket.bind((host, port))
+    except OSError as e:
+        print(f"Failed to bind to {host}:{port}: {e}")
+        return
     server_socket.listen(5)
-    print(f"Filexfer server running on {host}:{port}")
+    print(f"FileXfer server running on {host}:{port}")
 
     config = load_config(is_server=True)
     if not config:
         print("Server not initialized. Run 'filexfer init-server' first.")
         return
 
-    ssh_server = paramiko.ServerInterface()
-    while True:
-        try:
-            client_socket, addr = server_socket.accept()
-            transport = paramiko.Transport(client_socket)
-            transport.add_server_key(paramiko.RSAKey(filename=str(SSH_KEY_FILE)))
-            transport.start_server(server=ssh_server)
-            channel = transport.accept(20)
-            if channel is None:
-                continue
-            handle_client(channel, config)
-        except Exception as e:
-            print(f"Server error: {e}")
+    try:
+        rsa_key = paramiko.RSAKey.from_private_key_file(str(SSH_KEY_FILE))
+    except Exception as e:
+        print(f"Error loading RSA key: {e}")
+        return
+
+    class FileXferServer(paramiko.ServerInterface):
+        def check_auth_password(self, username, password):
+            if username == "filexfer" and password == "filexfer":
+                return paramiko.AUTH_SUCCESSFUL
+            return paramiko.AUTH_FAILED
+
+    try:
+        while True:
+            try:
+                client_socket, addr = server_socket.accept()
+                print(f"New connection from {addr}")
+                transport = paramiko.Transport(client_socket)
+                transport.add_server_key(rsa_key)
+                transport.set_keepalive(30)
+                transport.start_server(server=FileXferServer())
+                channel = transport.accept(20)
+                if channel is None:
+                    print("No channel established")
+                    continue
+                handle_client(channel, config)
+            except Exception as e:
+                print(f"Server error handling client {addr}: {e}")
+    except KeyboardInterrupt:
+        print("Server shutting down")
+    finally:
+        server_socket.close()
 
 def stop_server():
     """Stop the FileXfer server by terminating the process using port 2222."""
     import subprocess
     try:
-        # Find the PID using port 2222
-        result = subprocess.run(['lsof', '-i', ':2222'], capture_output=True, text=True)
+        # Try ss first, fallback to netstat
+        try:
+            result = subprocess.run(['ss', '-tlnp', 'sport', '=2222'], capture_output=True, text=True)
+        except FileNotFoundError:
+            result = subprocess.run(['netstat', '-tlnp'], capture_output=True, text=True)
+        
         lines = result.stdout.splitlines()
         pid = None
-        for line in lines[1:]:  # Skip header
-            if 'filexfer' in line:  # Ensure it's a Python process
-                pid = line.split()[1]  # PID is second column
-                break
+        for line in lines:
+            if ':2222' in line and 'python3' in line:
+                parts = line.split()
+                for part in parts:
+                    if '/python3' in part:
+                        pid = part.split('/')[0]
+                        break
+                if pid:
+                    break
         if pid:
             subprocess.run(['kill', '-9', pid])
-            print(f"Filexfer server (PID: {pid}) stopped")
+            print(f"FileXfer server (PID: {pid}) stopped")
         else:
             print("No FileXfer server process found on port 2222")
     except Exception as e:

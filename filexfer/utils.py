@@ -1,90 +1,109 @@
-import os
 import json
-import datetime
-from cryptography.fernet import Fernet
 from pathlib import Path
-import tempfile
+from cryptography.fernet import Fernet
+import paramiko
+import os
 from tqdm import tqdm
 
-CONFIG_DIR = Path("/root/.filexfer") if os.geteuid() == 0 else Path.home() / ".filexfer"
-CONFIG_FILE = CONFIG_DIR / "settings.json"
-KEY_FILE = CONFIG_DIR / "key"
-LOG_FILE = CONFIG_DIR / "transfers.json"
-
-def load_config(is_server=False):
-    if not CONFIG_FILE.exists() or not KEY_FILE.exists():
-        return None
-    with open(KEY_FILE, 'rb') as f:
-        key = f.read()
-    fernet = Fernet(key)
-    with open(CONFIG_FILE, 'r') as f:
-        config = json.load(f)
-    config["ssh_host"] = fernet.decrypt(config["ssh_host"].encode()).decode()
-    config["ssh_username"] = fernet.decrypt(config["ssh_username"].encode()).decode()
-    config["ssh_password"] = fernet.decrypt(config["ssh_password"].encode()).decode()
-    config["ssh_port"] = int(fernet.decrypt(config["ssh_port"].encode()).decode())
-    return config
+CONFIG_DIR = Path.home() / ".filexfer"
+SETTINGS_FILE = CONFIG_DIR / "settings.json"
+TRANSFER_LOG = CONFIG_DIR / "transfers.json"
+SSH_KEY_FILE = CONFIG_DIR / "key"
+FERNET_KEY_FILE = CONFIG_DIR / "fernet_key"
 
 def save_config(config, is_server=False):
     CONFIG_DIR.mkdir(exist_ok=True)
-    if not KEY_FILE.exists():
+    try:
         key = Fernet.generate_key()
-        with open(KEY_FILE, 'wb') as f:
-            f.write(key)
-        os.chmod(KEY_FILE, 0o600)
-    with open(KEY_FILE, 'rb') as f:
-        key = f.read()
-    fernet = Fernet(key)
-    encrypted_config = config.copy()
-    encrypted_config["ssh_host"] = fernet.encrypt(config["ssh_host"].encode()).decode()
-    encrypted_config["ssh_username"] = fernet.encrypt(config["ssh_username"].encode()).decode()
-    encrypted_config["ssh_password"] = fernet.encrypt(config["ssh_password"].encode()).decode()
-    encrypted_config["ssh_port"] = fernet.encrypt(str(config["ssh_port"]).encode()).decode()
-    with open(CONFIG_FILE, 'w') as f:
-        json.dump(encrypted_config, f, indent=4)
-    os.chmod(CONFIG_FILE, 0o600)
-    return key.decode() if is_server else None
+        fernet = Fernet(key)
+        config_data = config.copy()
+        
+        if is_server:
+            # Generate or regenerate RSA key if invalid or missing
+            try:
+                paramiko.RSAKey.from_private_key_file(str(SSH_KEY_FILE))
+            except Exception:
+                rsa_key = paramiko.RSAKey.generate(bits=2048)
+                with open(SSH_KEY_FILE, 'w') as f:
+                    f.write(rsa_key.get_private_key().decode())
+                os.chmod(SSH_KEY_FILE, 0o600)
+                
+            config_data["ssh_host"] = fernet.encrypt(config["ssh_host"].encode()).decode()
+            config_data["ssh_username"] = fernet.encrypt(config["ssh_username"].encode()).decode()
+            config_data["ssh_password"] = fernet.encrypt(config["ssh_password"].encode()).decode()
+            config_data["ssh_port"] = fernet.encrypt(str(config["ssh_port"]).encode()).decode()
+            
+            with open(SETTINGS_FILE, 'w') as f:
+                json.dump(config_data, f, indent=2)
+            os.chmod(SETTINGS_FILE, 0o600)
+            
+            with open(FERNET_KEY_FILE, 'wb') as f:
+                f.write(key)
+            os.chmod(FERNET_KEY_FILE, 0o600)
+            return key.decode()
+        return None
+    except Exception as e:
+        raise Exception(f"Failed to save config: {e}")
 
-def log_transfer(user_id, token_id, action, remote_path, local_path):
+def load_config(is_server=False):
+    try:
+        if not SETTINGS_FILE.exists():
+            return None
+        with open(SETTINGS_FILE, 'r') as f:
+            config = json.load(f)
+        if is_server:
+            with open(FERNET_KEY_FILE, 'rb') as f:
+                key = f.read()
+            fernet = Fernet(key)
+            config["ssh_host"] = fernet.decrypt(config["ssh_host"].encode()).decode()
+            config["ssh_username"] = fernet.decrypt(config["ssh_username"].encode()).decode()
+            config["ssh_password"] = fernet.decrypt(config["ssh_password"].encode()).decode()
+            config["ssh_port"] = int(fernet.decrypt(config["ssh_port"].encode()).decode())
+        return config
+    except Exception as e:
+        raise Exception(f"Failed to load config: {e}")
+
+def log_transfer(entry):
     try:
         CONFIG_DIR.mkdir(exist_ok=True)
-        logs = []
-        if LOG_FILE.exists():
-            with open(LOG_FILE, 'r') as f:
-                logs = json.load(f)
-        log_entry = {
-            "timestamp": datetime.datetime.utcnow().isoformat(),
-            "user_id": user_id,
-            "token_id": token_id,
-            "action": action,
-            "remote_path": remote_path,
-            "local_path": local_path
-        }
-        logs.append(log_entry)
-        with open(LOG_FILE, 'w') as f:
-            json.dump(logs, f, indent=4)
-        os.chmod(LOG_FILE, 0o600)
+        transfers = []
+        if TRANSFER_LOG.exists():
+            with open(TRANSFER_LOG, 'r') as f:
+                try:
+                    transfers = json.load(f)
+                except json.JSONDecodeError:
+                    transfers = []
+        transfers.append(entry)
+        with open(TRANSFER_LOG, 'w') as f:
+            json.dump(transfers, f, indent=2)
+        os.chmod(TRANSFER_LOG, 0o600)
     except Exception as e:
-        print(f"Error logging transfer: {e}")
+        raise Exception(f"Failed to log transfer: {e}")
 
 def encrypt_file(input_path, key):
-    fernet = Fernet(key)
-    with open(input_path, 'rb') as f:
-        data = f.read()
-    encrypted = fernet.encrypt(data)
-    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.enc')
-    with open(temp_file.name, 'wb') as f:
-        f.write(encrypted)
-    return temp_file.name
+    try:
+        fernet = Fernet(key)
+        with open(input_path, 'rb') as f:
+            data = f.read()
+        encrypted_data = fernet.encrypt(data)
+        output_path = input_path + '.enc'
+        with open(output_path, 'wb') as f:
+            f.write(encrypted_data)
+        return output_path
+    except Exception as e:
+        raise Exception(f"Failed to encrypt file: {e}")
 
 def decrypt_file(input_path, key, output_path):
-    fernet = Fernet(key)
-    with open(input_path, 'rb') as f:
-        encrypted = f.read()
-    decrypted = fernet.decrypt(encrypted)
-    with open(output_path, 'wb') as f:
-        f.write(decrypted)
-
+    try:
+        fernet = Fernet(key)
+        with open(input_path, 'rb') as f:
+            encrypted_data = f.read()
+        decrypted_data = fernet.decrypt(encrypted_data)
+        with open(output_path, 'wb') as f:
+            f.write(decrypted_data)
+    except Exception as e:
+        raise Exception(f"Failed to decrypt file: {e}")
+    
 class ProgressFile:
     def __init__(self, fileobj, size, desc):
         self.fileobj = fileobj
