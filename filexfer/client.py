@@ -7,6 +7,7 @@ import paramiko
 from pathlib import Path
 import shutil
 from cryptography.fernet import Fernet
+import tempfile
 from .utils import encrypt_file, decrypt_file, ProgressFile
 
 CONFIG_DIR = Path.home() / ".filexfer"
