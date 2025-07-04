@@ -12,7 +12,7 @@ from .utils import encrypt_file, decrypt_file, ProgressFile, save_config
 CONFIG_DIR = Path.home() / ".filexfer"
 CLIENT_KEY_FILE = CONFIG_DIR / "client_key"
 SERVER_HOST = "45.79.122.246"
-SERVER_PORT = 2222
+SERVER_PORT = 22
 
 def save_client_key(client_key):
     CONFIG_DIR.mkdir(exist_ok=True)
