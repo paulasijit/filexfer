@@ -65,14 +65,6 @@ def get_sftp_client(config):
     transport.connect(username=config["ssh_username"], password=config["ssh_password"])
     return paramiko.SFTPClient.from_transport(transport)
 
-# def validate_token(config, token_id):
-#     for token in config["tokens"]:
-#         if token["id"] == token_id:
-#             expiry = datetime.datetime.fromisoformat(token["expiry"])
-#             if expiry > datetime.datetime.utcnow():
-#                 return token
-#     return None
-
 def validate_token(config, token_id):
     # Try local validation first
     for token in config["tokens"]:

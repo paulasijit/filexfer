@@ -1,387 +1,286 @@
-# FileXfer
+# FileXfer: Secure File Transfer Tool
 
-FileXfer is a secure, cross-platform command-line tool for transferring files using SFTP (Secure File Transfer Protocol). It allows users to create buckets (folders), organize files in subfolders, generate expiring Transfer Tokens with read/write permissions, and securely transfer files to/from an SSH server. Files are encrypted during transfer, and all actions are logged for auditing. FileXfer is ideal for secure file sharing without relying on cloud services like AWS S3.
+FileXfer is a simple, secure tool for transferring files between your computer and a server using SSH. It uses a client-server model where the server manages file storage and the client handles file uploads, downloads, and more. Files are encrypted for security, and a unique client key ensures safe access to the server without storing sensitive data on your computer.
 
-## Features
-
-- **Cross-Platform**: Compatible with macOS, Linux, and Windows.
-- **Secure Transfers**: Uses SFTP with Fernet encryption for files.
-- **Bucket and Subfolder Management**: Organize files on the SSH server.
-- **Transfer Tokens**: Expiring tokens with read/write permissions.
-- **Transfer Logs**: JSON log of all uploads/downloads.
-- **Progress Bar**: Displays transfer progress via `tqdm`.
-- **SSH Server Setup**: Script to configure SFTP on Linux.
-- **Cost-Free**: Uses your own SSH server, avoiding cloud storage costs.
+This guide explains how to set up the FileXfer server on Linux and the client on Linux, macOS, or Windows. Follow the steps carefully, and you’ll be transferring files in no time!
 
 ## Prerequisites
 
-- Python 3.6 or higher.
-- An SSH server with SFTP enabled (see platform-specific setup below).
-- Internet access for SSH server connectivity.
+- **Server**: A Linux machine (e.g., Ubuntu) with SSH access and Python 3.6 or later.
+- **Client**: A computer running Linux, macOS, or Windows with Python 3.6 or later.
+- **Client Key**: A key provided by the server administrator to initialize the client (you’ll get this after setting up the server).
 
-## Installation
+## Server Setup (Linux Only)
 
-Clone the repository and install FileXfer using `pip`. Follow the instructions for your operating system.
+The server runs on a Linux machine (e.g., a cloud server like `XX.XX.XXX.XXX`) and handles file storage and client requests. Follow these steps to set it up.
 
-### macOS
+### Step 1: Log in to Your Linux Server
+Connect to your server using SSH. Replace `root@XX.XX.XXX.XXX` with your server’s address and username.
+```bash
+ssh root@XX.XX.XXX.XXX
+```
 
-1. **Clone the Repository**:
+### Step 2: Install FileXfer
+1. Clone or download the `filexfer` project to your server:
    ```bash
-   git clone https://github.com/yourusername/filexfer.git
+   git clone https://github.com/paulasijit/filexfer.git
    cd filexfer
    ```
-
-2. **Ensure Prerequisites**:
-   - Verify Python 3.6+:
-     ```bash
-     python3 --version
-     ```
-   - Install `setuptools` if missing:
-     ```bash
-     python3 -c "import setuptools" || pip install setuptools
-     ```
-     If `pip` is missing:
-     ```bash
-     curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
-     python3 get-pip.py
-     ```
-
-3. **Install FileXfer**:
+2. Create a virtual environment and activate it:
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate
+   ```
+3. Install FileXfer:
    ```bash
    pip install .
    ```
 
-4. **Add to PATH (if needed)**:
-   If you see a warning about `/Users/youruser/Library/Python/3.x/bin` not in PATH:
-   ```bash
-   export PATH="$PATH:/Users/youruser/Library/Python/3.9/bin"
-   echo 'export PATH="$PATH:/Users/youruser/Library/Python/3.9/bin"' >> ~/.zshrc
-   source ~/.zshrc
-   ```
+### Step 3: Initialize the Server
+Run the initialization command to set up the server with your SSH details:
+```bash
+filexfer init-server
+```
+You’ll be prompted to enter:
+- **SSH Host**: Your server’s address (e.g., `XX.XX.XXX.XXX`).
+- **SSH Port**: Usually `22` (press Enter for default).
+- **SSH Username**: Your SSH username (e.g., `asijitp`).
+- **SSH Password**: Your SSH password (e.g., `Asijit@1999`).
 
-5. **Verify Installation**:
-   ```bash
-   filexfer --help
-   ```
+Example output:
+```
+Server initialized
+Client key: gAAAAAB...
+```
+**Save the client key** (starts with `gAAAAAB...`). You’ll need to share it securely with anyone using the client (e.g., via encrypted email).
 
-### Linux
+### Step 4: Start the Server
+Run the server in the background:
+```bash
+filexfer server &
+```
+The server will start on port `2222`. You’ll see:
+```
+FileXfer server running on 0.0.0.0:2222
+```
 
-1. **Clone the Repository**:
+### Step 5: Open Port 2222
+Allow connections to port `2222`:
+```bash
+sudo ufw allow 2222
+```
+
+### Step 6: Verify Server Setup
+Check that the server’s configuration is created:
+```bash
+ls -l /root/.filexfer/
+```
+You should see `settings.json` (encrypted credentials) and `key`. Later, `transfers.json` will appear when files are transferred.
+
+## Client Setup
+
+The client runs on your computer (Linux, macOS, or Windows) and lets you upload, download, or manage files on the server. You need the `client_key` from the server setup.
+
+### Linux Client Setup
+1. **Clone or Download FileXfer**:
    ```bash
-   git clone https://github.com/yourusername/filexfer.git
+   git clone https://github.com/paulasijit/filexfer.git
    cd filexfer
    ```
-
-2. **Ensure Prerequisites**:
-   - Verify Python 3.6+:
-     ```bash
-     python3 --version
-     ```
-   - Install `setuptools` if missing:
-     ```bash
-     python3 -c "import setuptools" || pip install setuptools
-     ```
-     If `pip` is missing:
-     ```bash
-     curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
-     python3 get-pip.py
-     ```
-
+2. **Create and Activate Virtual Environment**:
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate
+   ```
+   If `python3` doesn’t work, try `python`.
 3. **Install FileXfer**:
    ```bash
    pip install .
    ```
-
-4. **Add to PATH (if needed)**:
-   If you see a warning about `~/.local/bin` not in PATH:
-   ```bash
-   export PATH="$PATH:$HOME/.local/bin"
-   echo 'export PATH="$PATH:$HOME/.local/bin"' >> ~/.bashrc
-   source ~/.bashrc
-   ```
-
-5. **Verify Installation**:
-   ```bash
-   filexfer --help
-   ```
-
-### Windows
-
-1. **Clone the Repository**:
-   - Use Git Bash, WSL, or a Git client:
-     ```bash
-     git clone https://github.com/yourusername/filexfer.git
-     cd filexfer
-     ```
-
-2. **Ensure Prerequisites**:
-   - Verify Python 3.6+:
-     ```bash
-     python --version
-     ```
-   - Install `setuptools` if missing:
-     ```bash
-     python -c "import setuptools" || pip install setuptools
-     ```
-     If `pip` is missing:
-     ```bash
-     curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
-     python get-pip.py
-     ```
-
-3. **Install FileXfer**:
-   ```bash
-   pip install .
-   ```
-
-4. **Add to PATH (if needed)**:
-   If you see a warning about `C:\Python39\Scripts` or `C:\Users\youruser\AppData\Local\Programs\Python\Python39\Scripts` not in PATH:
-   - Open **Control Panel > System > Advanced system settings > Environment Variables**.
-   - Edit the `Path` variable (user or system) and add the `Scripts` directory.
-   - Alternatively, in PowerShell:
-     ```powershell
-     $env:Path += ";C:\Python39\Scripts"
-     ```
-     Make it permanent:
-     ```powershell
-     [Environment]::SetEnvironmentVariable("Path", $env:Path + ";C:\Python39\Scripts", "User")
-     ```
-
-5. **Verify Installation**:
-   ```bash
-   filexfer --help
-   ```
-
-## SSH Server Setup
-
-FileXfer requires an SSH server with SFTP enabled. Follow the instructions for your platform.
-
-### macOS
-
-1. **Enable Built-in SSH Server**:
-   - Go to `System Preferences > Sharing > Remote Login` (or `System Settings > General > Sharing`).
-   - Enable **Remote Login**.
-
-2. **Create an SFTP User (Optional, for Security)**:
-   ```bash
-   sudo sysadminctl -addUser filexfer -fullName "FileXfer User" -password "your_secure_password"
-   ```
-
-3. **Configure Chrooted SFTP (Optional)**:
-   Edit `/etc/ssh/sshd_config`:
-   ```bash
-   sudo nano /etc/ssh/sshd_config
-   ```
-   Add:
-   ```
-   Match User filexfer
-       ChrootDirectory /Users/filexfer
-       ForceCommand internal-sftp
-       AllowTcpForwarding no
-   ```
-   Set up the directory:
-   ```bash
-   sudo mkdir /Users/filexfer
-   sudo chown filexfer:staff /Users/filexfer
-   sudo chmod 700 /Users/filexfer
-   ```
-   Restart SSH:
-   ```bash
-   sudo launchctl unload /System/Library/LaunchDaemons/ssh.plist
-   sudo launchctl load /System/Library/LaunchDaemons/ssh.plist
-   ```
-
-4. **Test SFTP**:
-   ```bash
-   sftp filexfer@localhost
-   ```
-
-### Linux
-
-1. **Run Setup Script**:
-   ```bash
-   filexfer-setup --username filexfer --password your_secure_password
-   ```
-   - Installs `openssh-server`, creates an SFTP user, and configures a chrooted directory.
-   - Requires `sudo`.
-
-2. **Ensure Port 22 is Open**:
-   ```bash
-   sudo ufw allow 22
-   ```
-
-3. **Test SFTP**:
-   ```bash
-   sftp filexfer@<server-ip>
-   ```
-
-### Windows
-
-1. **Install OpenSSH Server**:
-   - Go to `Settings > Apps > Optional features > Add a feature`.
-   - Install **OpenSSH Server**.
-   - Alternatively, use Windows Subsystem for Linux (WSL2) with Ubuntu and run `filexfer-setup` inside WSL2.
-
-2. **Configure OpenSSH**:
-   - Edit `C:\ProgramData\ssh\sshd_config` (requires admin rights).
-   - Add:
-     ```
-     Match User filexfer
-         ChrootDirectory C:\Users\filexfer
-         ForceCommand internal-sftp
-     ```
-   - Create the chroot directory:
-     ```powershell
-     mkdir C:\Users\filexfer
-     icacls "C:\Users\filexfer" /setowner filexfer
-     icacls "C:\Users\filexfer" /inheritance:r
-     ```
-   - Restart SSH:
-     ```powershell
-     net stop sshd
-     net start sshd
-     ```
-
-3. **Create an SFTP User**:
-   ```powershell
-   net user filexfer your_secure_password /add
-   ```
-
-4. **Test SFTP**:
-   ```bash
-   sftp filexfer@localhost
-   ```
-
-**Note**: For production use, consider a Linux server (local or cloud) for easier SFTP setup.
-
-## Usage
-
-Initialize FileXfer and use the CLI commands to manage buckets, tokens, and file transfers.
-
-1. **Initialize**:
+4. **Initialize the Client**:
    ```bash
    filexfer init
    ```
-   - Enter SSH host (e.g., `localhost` or `192.168.1.100`), port (`22`), username, and password.
-
-2. **Create a Bucket**:
+   Enter the `client_key` provided by the server administrator. Example:
+   ```
+   Enter client key: gAAAAAB...
+   Client initialized with server configuration
+   ```
+5. **Verify Setup**:
+   Check that the client key is saved:
    ```bash
-   filexfer create-bucket project1
+   cat ~/.filexfer/client_key
    ```
 
-3. **Create a Subfolder**:
+### macOS Client Setup
+1. **Clone or Download FileXfer**:
    ```bash
-   filexfer create-subfolder project1 docs
+   git clone https://github.com/paulasijit/filexfer.git
+   cd filexfer
+   ```
+   You may need `git` installed. Install it with:
+   ```bash
+   xcode-select --install
+   ```
+2. **Create and Activate Virtual Environment**:
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate
+   ```
+   Ensure Python 3 is installed (run `python3 --version`). If not, install it using Homebrew:
+   ```bash
+   brew install python
+   ```
+3. **Install FileXfer**:
+   ```bash
+   pip install .
+   ```
+4. **Initialize the Client**:
+   ```bash
+   filexfer init
+   ```
+   Enter the `client_key` provided by the server administrator.
+5. **Verify Setup**:
+   ```bash
+   cat ~/.filexfer/client_key
    ```
 
-4. **Create a Transfer Token**:
-   ```bash
-   filexfer create-token project1 --read --write --expiry-days 10
+### Windows Client Setup
+1. **Clone or Download FileXfer**:
+   Download the `filexfer` project from GitHub (https://github.com/paulasijit/filexfer) and extract it, or use Git:
+   ```cmd
+   git clone https://github.com/paulasijit/filexfer.git
+   cd filexfer
+   ```
+   Install Git from https://git-scm.com if needed.
+2. **Create and Activate Virtual Environment**:
+   Open Command Prompt (or PowerShell) and run:
+   ```cmd
+   python -m venv venv
+   venv\Scripts\activate
+   ```
+   Ensure Python 3 is installed (run `python --version`). If not, download it from https://www.python.org.
+3. **Install FileXfer**:
+   ```cmd
+   pip install .
+   ```
+4. **Initialize the Client**:
+   ```cmd
+   filexfer init
+   ```
+   Enter the `client_key` provided by the server administrator.
+5. **Verify Setup**:
+   ```cmd
+   type %USERPROFILE%\.filexfer\client_key
    ```
 
-5. **Upload a File**:
-   ```bash
-   filexfer upload <token-id> report.pdf docs/report.pdf
-   ```
-   - Windows: Use `report.pdf` or `C:\path\to\report.pdf`.
+## Using FileXfer
 
-6. **Download a File**:
-   ```bash
-   filexfer download <token-id> docs/report.pdf report_downloaded.pdf
-   ```
+Once the server and client are set up, you can use these commands to manage files.
 
-7. **Revoke a Token**:
-   ```bash
-   filexfer revoke-token <token-id>
-   ```
-
-8. **View Logs**:
-   ```bash
-   cat ~/.filexfer/transfers.json  # macOS/Linux
-   type %USERPROFILE%\.filexfer\transfers.json  # Windows
-   ```
-
-## Example Workflow
-
+### Create a Bucket
+A bucket is like a folder on the server:
 ```bash
-# Set up SSH server (Linux)
-filexfer-setup --username filexfer --password mysecurepassword
-
-# Initialize
-filexfer init  # e.g., host=192.168.1.100, username=filexfer
-
-# Create bucket and subfolder
 filexfer create-bucket project1
-filexfer create-subfolder project1 docs
+```
 
-# Create token
-filexfer create-token project1 --read --write --expiry-days 10
+### Create a Subfolder
+Add a subfolder inside a bucket:
+```bash
+filexfer create-subfolder project1 documents
+```
 
-# Upload file
-filexfer upload <token-id> report.pdf docs/report.pdf
+### Create a Transfer Token
+Generate a token to allow specific actions (read, write, delete):
+```bash
+filexfer create-token project1 --write --delete
+```
+This creates a token for writing and deleting in `project1`. Copy the token ID (e.g., `550e8400-e29b-41d4-a716-446655440000`).
 
-# Download file
-filexfer download <token-id> docs/report.pdf report_downloaded.pdf
+### Upload a File
+Upload a file to the server:
+```bash
+filexfer upload <token_id> ~/Downloads/file.txt documents/file.txt
+```
+Replace `<token_id>` with the token ID from `create-token`.
 
-# Revoke token
-filexfer revoke-token <token-id>
+### Download a File
+Download a file from the server:
+```bash
+filexfer download <token_id> documents/file.txt ~/Downloads/file.txt
+```
 
-# Check logs
-cat ~/.filexfer/transfers.json  # or type %USERPROFILE%\.filexfer\transfers.json
+### Delete a File
+Delete a file from the server:
+```bash
+filexfer delete <token_id> documents/file.txt
+```
+
+### Upload a Folder
+Upload a folder and its contents:
+```bash
+filexfer upload-folder <token_id> ~/myfolder documents/myfolder
+```
+
+### Delete a Folder
+Delete a folder and its contents:
+```bash
+filexfer delete-folder <token_id> documents/myfolder
+```
+
+### Revoke a Token
+Revoke a token to disable it:
+```bash
+filexfer revoke-token <token_id>
 ```
 
 ## Troubleshooting
 
-- **Command Not Found**:
-  Ensure the Python scripts directory is in PATH (see installation steps).
-- **SSH Connection Issues**:
-  - Verify server is running: `sudo systemctl status ssh` (Linux) or check `Remote Login` (macOS).
-  - Test: `sftp filexfer@<host>`.
-  - Ensure port 22 is open: `sudo ufw status` (Linux).
-- **Permission Errors**:
-  - Verify SSH user has write access to the chroot directory (e.g., `/var/filexfer`).
-- **Token Issues**:
-  - Check `~/.filexfer/settings.json` (or `%USERPROFILE%\.filexfer\settings.json`) for valid tokens.
+- **Server not running**:
+  Check if the server is running:
+  ```bash
+  ssh root@XX.XX.XXX.XXX 'ps aux | grep filexfer'
+  ```
+  Restart it if needed:
+  ```bash
+  filexfer server &
+  ```
+- **Client can’t connect**:
+  Ensure port `2222` is open:
+  ```bash
+  ssh root@XX.XX.XXX.XXX 'sudo ufw status'
+  ```
+  Open it if needed:
+  ```bash
+  sudo ufw allow 2222
+  ```
+- **No transfers.json file**:
+  Check the server’s log file:
+  ```bash
+  ssh root@XX.XX.XXX.XXX 'cat /root/.filexfer/transfers.json'
+  ```
+  Ensure the `/root/.filexfer` directory has correct permissions:
+  ```bash
+  ssh root@XX.XX.XXX.XXX
+  chmod 700 /root/.filexfer
+  ```
+  Run a test upload and check again.
+- **Invalid client key**:
+  Verify the `client_key` with the server administrator. Re-run:
+  ```bash
+  filexfer init
+  ```
+- **Command errors**:
+  Run the command again and note the error message. For example:
+  ```bash
+  filexfer upload <token_id> ~/Downloads/file.txt documents/file.txt
+  ```
+
+## Security Notes
+- The server stores all sensitive data (SSH credentials) in an encrypted file (`/root/.filexfer/settings.json`).
+- Clients only store a `client_key`, which is safe and cannot be used to access sensitive data without the server.
+- Share the `client_key` securely (e.g., via encrypted email).
+- For production, consider using SSH keys instead of a hardcoded username/password for the server (port `2222`).
 
 ## Contributing
-
-1. Fork and clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/filexfer.git
-   cd filexfer
-   ```
-
-2. Create a branch:
-   ```bash
-   git checkout -b feature/your-feature
-   ```
-
-3. Make changes, test, and install:
-   ```bash
-   pip install .
-   filexfer --help
-   ```
-
-4. Commit and push:
-   ```bash
-   git commit -m "Add your feature"
-   git push origin feature/your-feature
-   ```
-
-5. Open a pull request on GitHub.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
-
-## License
-
-MIT License. See [LICENSE](LICENSE).
-
-## Contact
-
-- Issues: [GitHub Issues](https://github.com/paulasijit/filexfer/issues)
-- Email: your.email@example.com
-- Discussions: [GitHub Discussions](https://github.com/paulasijit/filexfer/discussions)
-
----
-
-Thank you for using FileXfer! 🚀
+File issues or submit pull requests at https://github.com/paulasijit/filexfer.
