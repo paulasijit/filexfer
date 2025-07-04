@@ -262,9 +262,7 @@ def upload(token_id, local_path, remote_path):
     if not config:
         click.echo("Please run 'filexfer init' first.")
         return
-    print(config, token_id)
     token = validate_token(config, token_id)
-    print(token)
     if not token or not token["permissions"].get("write"):
         click.echo("Invalid or non-write token.")
         return
