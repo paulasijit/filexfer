@@ -7,7 +7,7 @@ import paramiko
 from pathlib import Path
 import shutil
 from cryptography.fernet import Fernet
-from .utils import encrypt_file, decrypt_file, ProgressFile
+from .utils import encrypt_file, decrypt_file, ProgressFile, save_config
 
 CONFIG_DIR = Path.home() / ".filexfer"
 CLIENT_KEY_FILE = CONFIG_DIR / "client_key"
@@ -132,9 +132,9 @@ def init_server(ssh_host, ssh_port, ssh_username, ssh_password):
         "ssh_password": ssh_password,
         "tokens": []
     }
-    response = send_server_command(f"init_server {json.dumps(config)}")
-    click.echo(response["message"])
-    click.echo(f"Client key: {response['client_key']}")
+    client_key = save_config(config, is_server=True)
+    click.echo("Server initialized")
+    click.echo(f"Client key: {client_key}")
 
 @cli.command()
 def server():
