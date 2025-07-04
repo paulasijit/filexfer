@@ -7,7 +7,6 @@ import paramiko
 from pathlib import Path
 import shutil
 from cryptography.fernet import Fernet
-import tempfile
 from .utils import encrypt_file, decrypt_file, ProgressFile
 
 CONFIG_DIR = Path.home() / ".filexfer"
@@ -303,7 +302,8 @@ def upload_folder(token_id, local_path, remote_path):
     try:
         sftp = get_sftp_client(config)
         upload_folder_recursive(sftp, local_path, remote_path, token)
-        send_server_command(f"log_transfer {json.dumps({'user_id': config['user_id'], 'token_id': token_id, 'action': 'upload_folder', 'remote_path': f'{token['bucket']}/{remote_path}', 'local_path': local_path})}")
+        remote_full_path = f"{token['bucket']}/{remote_path}"
+        send_server_command(f"log_transfer {json.dumps({'user_id': config['user_id'], 'token_id': token_id, 'action': 'upload_folder', 'remote_path': remote_full_path, 'local_path': local_path})}")
         click.echo(f"Folder uploaded to '{remote_path}'.")
         sftp.close()
     except Exception as e:
@@ -324,8 +324,9 @@ def delete_folder(token_id, remote_path):
         return
     try:
         sftp = get_sftp_client(config)
-        delete_recursive(sftp, f"{token['bucket']}/{remote_path}", token)
-        send_server_command(f"log_transfer {json.dumps({'user_id': config['user_id'], 'token_id': token_id, 'action': 'delete_folder', 'remote_path': f'{token['bucket']}/{remote_path}', 'local_path': None})}")
+        remote_full_path = f"{token['bucket']}/{remote_path}"
+        delete_recursive(sftp, remote_full_path, token)
+        send_server_command(f"log_transfer {json.dumps({'user_id': config['user_id'], 'token_id': token_id, 'action': 'delete_folder', 'remote_path': remote_full_path, 'local_path': None})}")
         click.echo(f"Folder '{remote_path}' deleted.")
         sftp.close()
     except Exception as e:
