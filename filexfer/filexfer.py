@@ -65,12 +65,38 @@ def get_sftp_client(config):
     transport.connect(username=config["ssh_username"], password=config["ssh_password"])
     return paramiko.SFTPClient.from_transport(transport)
 
+# def validate_token(config, token_id):
+#     for token in config["tokens"]:
+#         if token["id"] == token_id:
+#             expiry = datetime.datetime.fromisoformat(token["expiry"])
+#             if expiry > datetime.datetime.utcnow():
+#                 return token
+#     return None
+
 def validate_token(config, token_id):
+    # Try local validation first
     for token in config["tokens"]:
         if token["id"] == token_id:
             expiry = datetime.datetime.fromisoformat(token["expiry"])
             if expiry > datetime.datetime.utcnow():
                 return token
+
+    # If not found locally, check server
+    try:
+        transport = paramiko.Transport((config["ssh_host"], config["ssh_port"]))
+        transport.connect(username=config["ssh_username"], password=config["ssh_password"])
+        sftp = paramiko.SFTPClient.from_transport(transport)
+        with sftp.open('/root/.filexfer/settings.json', 'r') as f:
+            server_config = json.load(f)
+        sftp.close()
+        transport.close()
+        for token in server_config["tokens"]:
+            if token["id"] == token_id:
+                expiry = datetime.datetime.fromisoformat(token["expiry"])
+                if expiry > datetime.datetime.utcnow():
+                    return token
+    except Exception as e:
+        print(f"Error checking server tokens: {e}")
     return None
 
 def encrypt_file(input_path, key):
@@ -236,7 +262,9 @@ def upload(token_id, local_path, remote_path):
     if not config:
         click.echo("Please run 'filexfer init' first.")
         return
+    print(config, token_id)
     token = validate_token(config, token_id)
+    print(token)
     if not token or not token["permissions"].get("write"):
         click.echo("Invalid or non-write token.")
         return
