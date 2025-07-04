@@ -107,12 +107,12 @@ def stop_server():
         lines = result.stdout.splitlines()
         pid = None
         for line in lines[1:]:  # Skip header
-            if 'python3' in line:  # Ensure it's a Python process
+            if 'filexfer' in line:  # Ensure it's a Python process
                 pid = line.split()[1]  # PID is second column
                 break
         if pid:
             subprocess.run(['kill', '-9', pid])
-            print(f"FileXfer server (PID: {pid}) stopped")
+            print(f"Filexfer server (PID: {pid}) stopped")
         else:
             print("No FileXfer server process found on port 2222")
     except Exception as e:
