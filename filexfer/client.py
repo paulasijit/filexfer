@@ -27,16 +27,24 @@ def load_client_key():
         return f.read()
 
 def send_server_command(command):
-    transport = paramiko.Transport((SERVER_HOST, SERVER_PORT))
-    transport.connect(username="filexfer", password="filexfer")
-    channel = transport.open_session()
-    channel.exec_command(command)
-    response = json.loads(channel.recv(1024).decode())
-    channel.close()
-    transport.close()
-    if "error" in response:
-        raise Exception(response["error"])
-    return response
+    try:
+        print(f"Attempting to connect to {SERVER_HOST}:{SERVER_PORT}")
+        transport = paramiko.Transport((SERVER_HOST, SERVER_PORT))
+        print("Transport created, attempting to connect with username 'filexfer'")
+        transport.connect(username="filexfer", password="filexfer")
+        print("Connected, opening session")
+        channel = transport.open_session()
+        print(f"Sending command: {command}")
+        channel.exec_command(command)
+        response = json.loads(channel.recv(1024).decode())
+        channel.close()
+        transport.close()
+        if "error" in response:
+            raise Exception(response["error"])
+        return response
+    except Exception as e:
+        print(f"Error in send_server_command: {e}")
+        raise
 
 def get_sftp_client(config):
     transport = paramiko.Transport((config["ssh_host"], config["ssh_port"]))
@@ -141,6 +149,12 @@ def server():
     """Start the FileXfer server."""
     from .server import run_server
     run_server()
+
+@cli.command()
+def stop():
+    """Stop the FileXfer server."""
+    from .server import stop_server
+    stop_server()
 
 @cli.command()
 @click.argument("bucket_name")
